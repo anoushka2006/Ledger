@@ -12,6 +12,19 @@ def save_transactions(transactions, filepath):
     df.to_csv(filepath, index = False)
     return
 
+# adding transaction to in-memory
+def add_transaction(transactions, date, category, amount, description, included=True):
+    new_transaction = {
+        "date": date,
+        "category": category,
+        "amount": amount,
+        "description": description,
+        "included": included
+    }
+    transactions.append(new_transaction)
+    return transactions
+
+
 # to calculate total balance and expenses
 def calculate_balance(transactions, balance = 0):
     for item in transactions:
@@ -76,10 +89,3 @@ def filter_by_week(transactions, year, week_number):
             date_list.append(item)
 
     return date_list
-
-
-
-# dummy runs
-transactions = load_transactions("data/sample_transactions.csv")
-print(calculate_balance(transactions))
-print(summarize_by_category(transactions))
