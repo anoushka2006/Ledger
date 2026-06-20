@@ -4,4 +4,10 @@ date,category,amount,description,included
 2026-05-29,work,30,work,True
 2026-05-20,food,-50,groceries,True
 2026-05-24,family,400,parents,True
-2026-06-19,transport,-11,Uber in SF,True
+2026-06-17,shopping,-32,Garage top,True
+2026-04-15,transport,-20,SFSF,True
+2026-03-12,family,20,Parents,True
+2026-02-19,entertainment,-78,Minigolf,True
+2026-01-15,family,100,Parents,True
+2025-10-23,entertainment,-200,Birthday,True
+2024-11-19,transport,-200,Sample fake,True
