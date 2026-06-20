@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 
 function App() {
   const [transactions, setTransactions] = useState([]);
   const [summary, setSummary] = useState({});
 
+  // calculations for banner header
   const totalIncome = transactions
     .filter(t => t.amount >= 0)
     .reduce((total, t) => total + t.amount, 0);
@@ -12,6 +14,7 @@ function App() {
     .reduce((total, t) => total + t.amount, 0) * -1;
   const netBalance = totalIncome - totalExpenses;
 
+  //Form inputs
   const [formData, setFormData] = useState({
     date: "",
     category: "",
@@ -20,6 +23,60 @@ function App() {
     type: "debit",
     included: true
   });
+
+  // group by month
+  const groupByMonth = (transactions) => {
+    const months = {};
+    
+    transactions.forEach(t => {
+      const date = new Date(t.date);
+      const key = date.toLocaleString("default", { month: "short" }) + " " + date.getFullYear().toString().slice(-2);
+      
+      if (!months[key]) {
+        months[key] = { month: key, income: 0, expenses: 0 };
+      }
+      
+      if (t.amount >= 0) {
+        months[key].income += t.amount;
+      } else {
+        months[key].expenses += Math.abs(t.amount);
+      }
+    });
+    
+    return Object.values(months);
+  };
+  const monthlyData = groupByMonth(transactions).sort((a, b) => {
+    return new Date("01 " + a.month) - new Date("01 " + b.month);
+  });
+
+
+  // category expenses
+  const categoryChartData = Object.entries(summary)
+    .filter(([key, value]) => value < 0)
+    .map(([key, value]) => ({ name: key, value: Math.abs(value) }));
+
+  // card summary data
+  const avgMonthlySpend = monthlyData.length > 0 
+    ? totalExpenses / monthlyData.length 
+    : 0;
+
+  const transactionCount = transactions.length;
+
+  const largestExpense = transactions
+    .filter(t => t.amount < 0)
+    .reduce((min, t) => t.amount < min ? t.amount : min, 0);
+
+  const topCategory = Object.entries(summary)
+    .filter(([_, v]) => v < 0)
+    .sort((a, b) => a[1] - b[1])[0]?.[0] ?? "N/A";
+
+  const lastMonthSpend = monthlyData.length >= 2 
+    ? monthlyData[monthlyData.length - 2].expenses 
+    : 0;
+  const spendingChange = lastMonthSpend > 0 
+    ? ((monthlyData[monthlyData.length - 1]?.expenses - lastMonthSpend) / lastMonthSpend * 100).toFixed(1)
+    : "N/A";
+
 
   const handleSubmit = (e) => {
     e.preventDefault(); // stops page from reloading
@@ -46,73 +103,221 @@ function App() {
       .then(data => setSummary(data))
   }, []);
 
+
   return (
-    <div>
-      <h1>Finance Dashboard</h1>
-      <div>
-        <h2>Total Income: ${totalIncome}</h2>
-        <h2>Total Expenses: ${totalExpenses}</h2>
-        <h2>Net Balance: ${netBalance}</h2>
+    <div className="bg-gray-900 min-h-screen text-white">
+      {/* Navbar */}
+      <nav className="bg-gray-900 border-b border-gray-700 px-6 py-4 flex justify-between items-center">
+        <h1 className="text-green-400 font-bold text-xl">⬛ Finance Tracker</h1>
+        <div className="flex gap-2">
+          {["All Time", "Yearly", "6 Months", "Monthly"].map(period => (
+            <button key={period} className="px-4 py-1 rounded text-sm text-gray-400 hover:text-white">
+              {period}
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-3 border-b border-gray-700">
+        <div className="p-6 border-r border-gray-700">
+          <p className="text-gray-400 text-xs uppercase tracking-widest">↗ Total Income</p>
+          <p className="text-green-400 text-4xl font-bold mt-2">${totalIncome.toFixed(2)}</p>
+        </div>
+        <div className="p-6 border-r border-gray-700">
+          <p className="text-gray-400 text-xs uppercase tracking-widest">↘ Total Expenses</p>
+          <p className="text-red-400 text-4xl font-bold mt-2">${totalExpenses.toFixed(2)}</p>
+        </div>
+        <div className="p-6">
+          <p className="text-gray-400 text-xs uppercase tracking-widest">↗ Net Balance</p>
+          <p className="text-green-400 text-4xl font-bold mt-2">${netBalance.toFixed(2)}</p>
+        </div>
       </div>
-      <form onSubmit={handleSubmit}>
-        <input
-          type="text"
-          value={formData.date}
-          onChange={(e) => setFormData({...formData, date: e.target.value})}
-          placeholder="Date"
-        />
-        <select
-          value={formData.category}
-          onChange={(e) => setFormData({...formData, category: e.target.value})}
-        >
-          <option value="" disabled>Category</option>
-          <option value="food">Food</option>
-          <option value="shopping">Shopping</option>
-          <option value="transport">Transport/Travel</option>
-          <option value="entertainment">Entertainment/Fun</option>
-          <option value="work">Work/Income</option>
-          <option value="subscriptions">Subscriptions</option>
-          <option value="family">Family</option>
-          <option value="other">Other</option>
-        </select>
-        <input
-          type="text"
-          value={formData.amount}
-          onChange={(e) => setFormData({...formData, amount: e.target.value})}
-          placeholder="Amount"
-        />
-        <input
-          type="text"
-          value={formData.description}
-          onChange={(e) => setFormData({...formData, description: e.target.value})}
-          placeholder="Description"
-        />
-        <select
-          value={formData.type}
-          onChange={(e) => setFormData({...formData, type: e.target.value})}
-        >
-          <option value="debit">Debit</option>
-          <option value="credit">Credit</option>
-        </select>
-        {formData.type === "credit" && (
-          <label>
-            <input
-              type="checkbox"
-              checked={formData.included}
-              onChange={(e) => setFormData({...formData, included: e.target.checked})}
-            />
-            Include in calculations
-          </label>
-        )}
-        <button type="submit">Add Transaction</button>
-      </form>
-      <ul>
-        {transactions.map((t, index) => (
-          <li key={index}>
-            {t.date} | {t.category} | ${t.amount} | {t.description}
-          </li>
-        ))}
-      </ul>
+
+      {/* Main Layout */}
+      <div className="flex">
+        {/* Left Sidebar */}
+        <div className="w-80 border-r border-gray-700 p-6 min-h-screen">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <p className="text-xs uppercase tracking-widest text-gray-400 font-semibold">Add Transaction</p>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-gray-400">Date</label>
+              <input type="date" value={formData.date}
+                onChange={(e) => setFormData({...formData, date: e.target.value})}
+                className="bg-gray-800 text-white px-3 py-2 rounded text-sm w-full"/>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-gray-400">Category</label>
+              <select value={formData.category}
+                onChange={(e) => setFormData({...formData, category: e.target.value})}
+                className="bg-gray-800 text-white px-3 py-2 rounded text-sm w-full">
+                <option value="" disabled>Select category</option>
+                <option value="food">Food</option>
+                <option value="shopping">Shopping</option>
+                <option value="transport">Transport/Travel</option>
+                <option value="entertainment">Entertainment/Fun</option>
+                <option value="work">Work/Income</option>
+                <option value="subscriptions">Subscriptions</option>
+                <option value="family">Family</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-gray-400">Amount (USD)</label>
+              <input type="number" value={formData.amount}
+                onChange={(e) => setFormData({...formData, amount: e.target.value})}
+                placeholder="0.00"
+                className="bg-gray-800 text-white px-3 py-2 rounded text-sm w-full"/>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-gray-400">Description</label>
+              <input type="text" value={formData.description}
+                onChange={(e) => setFormData({...formData, description: e.target.value})}
+                placeholder="Brief description..."
+                className="bg-gray-800 text-white px-3 py-2 rounded text-sm w-full"/>
+            </div>
+
+            {/* Debit/Credit toggle */}
+            <div className="flex">
+              <button type="button"
+                onClick={() => setFormData({...formData, type: "debit"})}
+                className={`flex-1 py-2 text-sm font-bold ${formData.type === "debit" ? "bg-red-500 text-white" : "bg-gray-800 text-gray-400"}`}>
+                DEBIT
+              </button>
+              <button type="button"
+                onClick={() => setFormData({...formData, type: "credit"})}
+                className={`flex-1 py-2 text-sm font-bold ${formData.type === "credit" ? "bg-gray-600 text-white" : "bg-gray-800 text-gray-400"}`}>
+                CREDIT
+              </button>
+            </div>
+
+            {formData.type === "credit" && (
+              <label className="flex items-center gap-2 text-sm text-gray-400">
+                <input type="checkbox" checked={formData.included}
+                  onChange={(e) => setFormData({...formData, included: e.target.checked})}/>
+                Include in calculations
+              </label>
+            )}
+
+            <button type="submit"
+              className="bg-green-500 hover:bg-green-400 text-black font-bold py-3 rounded text-sm w-full">
+              + Add Entry
+            </button>
+          </form>
+        </div>
+
+
+        {/* Right Main Area */}
+        <div className="flex-1 p-6">
+          <div className="grid grid-cols-2 gap-6 mt-2">
+
+            {/* Bar chart on left */}
+            <div className="flex flex-col gap-4">
+              <p className="text-xs uppercase tracking-widest text-gray-400 font-semibold">Income vs Expenses Trend</p>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={monthlyData}>
+                  <XAxis dataKey="month" stroke="#6b7280" tick={{fill: "#6b7280", fontSize: 12}}/>
+                  <YAxis stroke="#6b7280" tick={{fill: "#6b7280", fontSize: 12}}/>
+                  <Tooltip contentStyle={{backgroundColor: "#1f2937", border: "none"}}/>
+                  <Bar dataKey="income" fill="#22c55e" radius={[4,4,0,0]}/>
+                  <Bar dataKey="expenses" fill="#f97316" radius={[4,4,0,0]}/>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+  
+            {/* Donut chart on right */}
+            <div className="flex flex-col gap-4">
+              <p className="text-xs uppercase tracking-widest text-gray-400 font-semibold">Category Breakdown</p>
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie data={categoryChartData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} dataKey="value">
+                    {categoryChartData.map((entry, index) => (
+                      <Cell key={index} fill={["#6366f1","#f97316","#22c55e","#eab308","#ec4899","#14b8a6"][index % 6]}/>
+                    ))}
+                  </Pie>
+                  <Tooltip contentStyle={{backgroundColor: "#1f2937", border: "none"}}/>
+                  <Legend
+                    layout="vertical" 
+                    align="right" 
+                    verticalAlign="middle"
+                    iconType="circle"
+                    iconSize={8}
+                    wrapperStyle={{fontSize: "14px", color: "#9ca3af"}}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-6 mt-8">
+            {/* At a Glance */}
+            <div>
+              <p className="text-xs uppercase tracking-widest text-gray-400 font-semibold mb-4">At a Glance</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <p className="text-xs text-gray-400">Avg Monthly Spend</p>
+                  <p className="text-green-400 text-xl font-bold mt-1">${avgMonthlySpend.toFixed(2)}</p>
+                </div>
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <p className="text-xs text-gray-400">Transactions</p>
+                  <p className="text-white text-xl font-bold mt-1">{transactionCount}</p>
+                </div>
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <p className="text-xs text-gray-400">Largest Expense</p>
+                  <p className="text-red-400 text-xl font-bold mt-1">-${Math.abs(largestExpense).toFixed(2)}</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {transactions.find(t => t.amount === largestExpense)?.description ?? ""}
+                  </p>
+                </div>
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <p className="text-xs text-gray-400">Top Category</p>
+                  <p className="text-white text-xl font-bold mt-1 capitalize">{topCategory}</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    ${Math.abs(summary[topCategory] ?? 0).toFixed(2)} total
+                  </p>
+                </div>
+                <div className="bg-gray-800 rounded-lg p-4 col-span-2">
+                  <p className="text-xs text-gray-400">Spending vs Last Month</p>
+                  <p className={`text-xl font-bold mt-1 ${spendingChange > 0 ? "text-red-400" : "text-green-400"}`}>
+                    {spendingChange === "N/A" ? "N/A" : `${spendingChange}%`}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Recent Transactions */}
+            <div>
+              <p className="text-xs uppercase tracking-widest text-gray-400 font-semibold mb-4">Recent Transactions</p>
+              <div className="flex flex-col gap-2">
+                {[...transactions]
+                  .sort((a, b) => new Date(a.date) - new Date(b.date))
+                  .reverse()
+                  .slice(0, 8)
+                  .map((t, index) => (
+                    <div key={index} className="flex justify-between items-center border-b border-gray-700 pb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-2 h-2 rounded-full bg-green-400"></div>
+                        <div>
+                          <p className="text-sm font-medium">{t.description}</p>
+                          <p className="text-xs text-gray-400">{t.category} · {new Date(t.date).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"})}</p>
+                        </div>
+                      </div>
+                      <p className={`text-sm font-bold ${t.amount < 0 ? "text-red-400" : "text-green-400"}`}>
+                        {t.amount < 0 ? `-$${Math.abs(t.amount)}` : `+$${t.amount}`}
+                      </p>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Charts + transactions go here */}
+        </div>
+      </div>
     </div>
   );
 }
