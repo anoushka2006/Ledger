@@ -14,6 +14,8 @@ function App() {
     .reduce((total, t) => total + t.amount, 0) * -1;
   const netBalance = totalIncome - totalExpenses;
 
+  const [activePeriod, setActivePeriod] = useState("All Time");
+
   //Form inputs
   const [formData, setFormData] = useState({
     date: "",
@@ -30,7 +32,7 @@ function App() {
     
     transactions.forEach(t => {
       const date = new Date(t.date);
-      const key = date.toLocaleString("default", { month: "short" }) + " " + date.getFullYear().toString().slice(-2);
+      const key = date.toLocaleString("default", { month: "short" }) + " " + date.getFullYear();
       
       if (!months[key]) {
         months[key] = { month: key, income: 0, expenses: 0 };
@@ -55,6 +57,17 @@ function App() {
     .filter(([key, value]) => value < 0)
     .map(([key, value]) => ({ name: key, value: Math.abs(value) }));
 
+  const categoryColors = {
+    entertainment: "#6366f1",
+    food: "#f97316",
+    shopping: "#22c55e",
+    transport: "#eab308",
+    work: "#ec4899",
+    subscriptions: "#14b8a6",
+    family: "#60a5fa",
+    other: "#9ca3af"
+  };
+
   // card summary data
   const avgMonthlySpend = monthlyData.length > 0 
     ? totalExpenses / monthlyData.length 
@@ -76,6 +89,15 @@ function App() {
   const spendingChange = lastMonthSpend > 0 
     ? ((monthlyData[monthlyData.length - 1]?.expenses - lastMonthSpend) / lastMonthSpend * 100).toFixed(1)
     : "N/A";
+
+  const lastParentTransaction = [...transactions]
+    .filter(t => t.category === "family" && t.amount > 0)
+    .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+
+
+  //Notes section
+  const [notes, setNotes] = useState([]);
+  const [newNote, setNewNote] = useState("");
 
 
   const handleSubmit = (e) => {
@@ -108,10 +130,18 @@ function App() {
     <div className="bg-gray-900 min-h-screen text-white">
       {/* Navbar */}
       <nav className="bg-gray-900 border-b border-gray-700 px-6 py-4 flex justify-between items-center">
-        <h1 className="text-green-400 font-bold text-xl">⬛ Finance Tracker</h1>
-        <div className="flex gap-2">
+        <h1 className="text-white font-bold text-xl tracking-tight">◆ Finance Tracker</h1>
+        <div className="flex bg-gray-800 rounded-lg p-1 gap-1">
           {["All Time", "Yearly", "6 Months", "Monthly"].map(period => (
-            <button key={period} className="px-4 py-1 rounded text-sm text-gray-400 hover:text-white">
+            <button
+              key={period}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                activePeriod === period
+                  ? "bg-blue-500 text-white"
+                  : "text-gray-400 hover:text-white"
+              }`}
+              onClick={() => setActivePeriod(period)}
+            >
               {period}
             </button>
           ))}
@@ -121,16 +151,22 @@ function App() {
       {/* Summary Cards */}
       <div className="grid grid-cols-3 border-b border-gray-700">
         <div className="p-6 border-r border-gray-700">
-          <p className="text-gray-400 text-xs uppercase tracking-widest">↗ Total Income</p>
+          <p className="text-gray-400 text-xs uppercase tracking-widest">
+            <span className="text-green-400">↗</span> Total Income
+          </p>
           <p className="text-green-400 text-4xl font-bold mt-2">${totalIncome.toFixed(2)}</p>
         </div>
         <div className="p-6 border-r border-gray-700">
-          <p className="text-gray-400 text-xs uppercase tracking-widest">↘ Total Expenses</p>
+          <p className="text-gray-400 text-xs uppercase tracking-widest">
+            <span className="text-red-400">↘</span> Total Expenses
+          </p>
           <p className="text-red-400 text-4xl font-bold mt-2">${totalExpenses.toFixed(2)}</p>
         </div>
         <div className="p-6">
           <p className="text-gray-400 text-xs uppercase tracking-widest">↗ Net Balance</p>
-          <p className="text-green-400 text-4xl font-bold mt-2">${netBalance.toFixed(2)}</p>
+          <p className="text-green-400 text-4xl font-bold mt-2">
+            {netBalance < 0 ? `-$${Math.abs(netBalance).toFixed(2)}` : `$${netBalance.toFixed(2)}`}
+          </p>
         </div>
       </div>
 
@@ -190,7 +226,7 @@ function App() {
               </button>
               <button type="button"
                 onClick={() => setFormData({...formData, type: "credit"})}
-                className={`flex-1 py-2 text-sm font-bold ${formData.type === "credit" ? "bg-gray-600 text-white" : "bg-gray-800 text-gray-400"}`}>
+                className={`flex-1 py-2 text-sm font-bold ${formData.type === "credit" ? "bg-blue-500 text-white" : "bg-gray-800 text-gray-400"}`}>
                 CREDIT
               </button>
             </div>
@@ -208,6 +244,40 @@ function App() {
               + Add Entry
             </button>
           </form>
+
+          <div className="mt-8">
+            <p className="text-xs uppercase tracking-widest text-gray-400 font-semibold mb-4">
+              ⚠ Emergency Notes
+            </p>
+            <div className="flex gap-2 mb-4">
+              <input
+                type="text"
+                value={newNote}
+                onChange={(e) => setNewNote(e.target.value)}
+                placeholder="Log an emergency transaction..."
+                className="bg-gray-800 text-white px-3 py-2 rounded text-sm flex-1"
+              />
+              <button
+                onClick={() => {
+                  if (newNote.trim()) {
+                    setNotes([...notes, {text: newNote, date: new Date().toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"})}]);
+                    setNewNote("");
+                  }
+                }}
+                className="bg-yellow-500 text-black font-bold px-3 py-2 rounded text-sm"
+              >
+                +
+              </button>
+            </div>
+            <div className="flex flex-col gap-3">
+              {notes.map((note, index) => (
+                <div key={index} className="bg-gray-800 rounded p-3">
+                  <p className="text-sm text-white">{note.text}</p>
+                  <p className="text-xs text-gray-500 mt-1">{note.date}</p>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
 
@@ -220,11 +290,25 @@ function App() {
               <p className="text-xs uppercase tracking-widest text-gray-400 font-semibold">Income vs Expenses Trend</p>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={monthlyData}>
-                  <XAxis dataKey="month" stroke="#6b7280" tick={{fill: "#6b7280", fontSize: 12}}/>
+                  <XAxis 
+                    dataKey="month"
+                    stroke="#6b7280"
+                    tick={{fill: "#6b7280", fontSize: 11}}
+                    interval={0}
+                    angle={-30}
+                    textAnchor="end"
+                    height={60}
+                  />
                   <YAxis stroke="#6b7280" tick={{fill: "#6b7280", fontSize: 12}}/>
-                  <Tooltip contentStyle={{backgroundColor: "#1f2937", border: "none"}}/>
-                  <Bar dataKey="income" fill="#22c55e" radius={[4,4,0,0]}/>
-                  <Bar dataKey="expenses" fill="#f97316" radius={[4,4,0,0]}/>
+                  <Tooltip
+                    contentStyle={{backgroundColor: "#111827", border: "1px solid #374151", borderRadius: "8px"}}
+                    labelStyle={{color: "#f9fafb"}}
+                    itemStyle={{color: "#9ca3af"}}
+                    formatter={(value, name) => [`$${value.toFixed(2)}`, name.charAt(0).toUpperCase() + name.slice(1)]}
+                    labelFormatter={(label) => label}
+                  />
+                  <Bar dataKey="income" fill="#22c55e" radius={[4,4,0,0]} background={{fill: "transparent"}}/>
+                <Bar dataKey="expenses" fill="#ef4444" radius={[4,4,0,0]} background={{fill: "transparent"}}/>
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -232,7 +316,7 @@ function App() {
             {/* Donut chart on right */}
             <div className="flex flex-col gap-4">
               <p className="text-xs uppercase tracking-widest text-gray-400 font-semibold">Category Breakdown</p>
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="85%" height={300}>
                 <PieChart>
                   <Pie data={categoryChartData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} dataKey="value">
                     {categoryChartData.map((entry, index) => (
@@ -280,11 +364,24 @@ function App() {
                     ${Math.abs(summary[topCategory] ?? 0).toFixed(2)} total
                   </p>
                 </div>
-                <div className="bg-gray-800 rounded-lg p-4 col-span-2">
+                <div className="bg-gray-800 rounded-lg p-4">
                   <p className="text-xs text-gray-400">Spending vs Last Month</p>
                   <p className={`text-xl font-bold mt-1 ${spendingChange > 0 ? "text-red-400" : "text-green-400"}`}>
                     {spendingChange === "N/A" ? "N/A" : `${spendingChange}%`}
                   </p>
+                </div>
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <p className="text-xs text-gray-400">Last Allowance / Deposit</p>
+                  {lastParentTransaction ? (
+                    <>
+                      <p className="text-white text-xl font-bold mt-1">
+                        {new Date(lastParentTransaction.date).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"})}
+                      </p>
+                     <p className="text-xs text-gray-500 mt-1">+${lastParentTransaction.amount.toFixed(2)}</p>
+                    </>
+                  ) : (
+                    <p className="text-gray-500 text-sm mt-1">No deposits recorded</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -300,7 +397,9 @@ function App() {
                   .map((t, index) => (
                     <div key={index} className="flex justify-between items-center border-b border-gray-700 pb-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-2 h-2 rounded-full bg-green-400"></div>
+                        <div className="w-2 h-2 rounded-full" 
+                          style={{backgroundColor: categoryColors[t.category] || "#9ca3af"}}>
+                        </div>
                         <div>
                           <p className="text-sm font-medium">{t.description}</p>
                           <p className="text-xs text-gray-400">{t.category} · {new Date(t.date).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"})}</p>
