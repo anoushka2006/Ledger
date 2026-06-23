@@ -11,3 +11,7 @@ date,category,amount,description,included
 2026-01-15,family,100,Parents,True
 2025-10-23,entertainment,-200,Birthday,True
 2024-11-19,transport,-200,Sample fake,True
+2026-06-22,subscriptions,-20,Claude AI,True
+2026-06-22,entertainment,-30,Movie,True
+2026-06-22,family,500,Allowance,True
+2026-06-15,other,-78,Other,True

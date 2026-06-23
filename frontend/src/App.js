@@ -5,16 +5,39 @@ function App() {
   const [transactions, setTransactions] = useState([]);
   const [summary, setSummary] = useState({});
 
+  const [activePeriod, setActivePeriod] = useState("All Time");
+
+  //Toggle wiring
+  //const [activePeriod, setActivePeriod] = useState("All Time"); // already have this
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+
+  const filteredTransactions = (() => {
+    if (activePeriod === "All Time") return transactions;
+    if (activePeriod === "Monthly") return transactions.filter(t => {
+      const date = new Date(t.date);
+      return date.getMonth() + 1 === selectedMonth && date.getFullYear() === selectedYear;
+    });
+    if (activePeriod === "Yearly") return transactions.filter(t => {
+      return new Date(t.date).getFullYear() === selectedYear;
+    });
+    if (activePeriod === "6 Months") {
+      const sixMonthsAgo = new Date();
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+      return transactions.filter(t => new Date(t.date) >= sixMonthsAgo);
+    }
+    return transactions;
+  })();
+
+  
   // calculations for banner header
-  const totalIncome = transactions
+  const totalIncome = filteredTransactions
     .filter(t => t.amount >= 0)
     .reduce((total, t) => total + t.amount, 0);
-  const totalExpenses = transactions
+  const totalExpenses = filteredTransactions
     .filter(t => t.amount < 0)
     .reduce((total, t) => total + t.amount, 0) * -1;
   const netBalance = totalIncome - totalExpenses;
-
-  const [activePeriod, setActivePeriod] = useState("All Time");
 
   //Form inputs
   const [formData, setFormData] = useState({
@@ -47,15 +70,20 @@ function App() {
     
     return Object.values(months);
   };
-  const monthlyData = groupByMonth(transactions).sort((a, b) => {
+  const monthlyData = groupByMonth(filteredTransactions).sort((a, b) => {
     return new Date("01 " + a.month) - new Date("01 " + b.month);
   });
 
 
   // category expenses
-  const categoryChartData = Object.entries(summary)
-    .filter(([key, value]) => value < 0)
-    .map(([key, value]) => ({ name: key, value: Math.abs(value) }));
+  const categoryChartData = Object.entries(
+    filteredTransactions
+      .filter(t => t.amount < 0)
+      .reduce((acc, t) => {
+        acc[t.category] = (acc[t.category] || 0) + Math.abs(t.amount);
+        return acc;
+      }, {})
+  ).map(([name, value]) => ({ name, value }));
 
   const categoryColors = {
     entertainment: "#6366f1",
@@ -68,20 +96,19 @@ function App() {
     other: "#9ca3af"
   };
 
-  // card summary data
+
+  // At A Glance Data
   const avgMonthlySpend = monthlyData.length > 0 
     ? totalExpenses / monthlyData.length 
     : 0;
 
-  const transactionCount = transactions.length;
+  const transactionCount = filteredTransactions.length;
 
-  const largestExpense = transactions
+  const largestExpense = filteredTransactions
     .filter(t => t.amount < 0)
     .reduce((min, t) => t.amount < min ? t.amount : min, 0);
 
-  const topCategory = Object.entries(summary)
-    .filter(([_, v]) => v < 0)
-    .sort((a, b) => a[1] - b[1])[0]?.[0] ?? "N/A";
+  const topCategory = categoryChartData.sort((a,b) => b.value - a.value)[0]?.name ?? "N/A";
 
   const lastMonthSpend = monthlyData.length >= 2 
     ? monthlyData[monthlyData.length - 2].expenses 
@@ -98,7 +125,6 @@ function App() {
   //Notes section
   const [notes, setNotes] = useState([]);
   const [newNote, setNewNote] = useState("");
-
 
   const handleSubmit = (e) => {
     e.preventDefault(); // stops page from reloading
@@ -247,14 +273,14 @@ function App() {
 
           <div className="mt-8">
             <p className="text-xs uppercase tracking-widest text-gray-400 font-semibold mb-4">
-              ⚠ Emergency Notes
+              Notes
             </p>
             <div className="flex gap-2 mb-4">
               <input
                 type="text"
                 value={newNote}
                 onChange={(e) => setNewNote(e.target.value)}
-                placeholder="Log an emergency transaction..."
+                placeholder="Log a transaction note"
                 className="bg-gray-800 text-white px-3 py-2 rounded text-sm flex-1"
               />
               <button
@@ -307,8 +333,8 @@ function App() {
                     formatter={(value, name) => [`$${value.toFixed(2)}`, name.charAt(0).toUpperCase() + name.slice(1)]}
                     labelFormatter={(label) => label}
                   />
+                  <Bar dataKey="expenses" fill="#ef4444" radius={[4,4,0,0]} background={{fill: "transparent"}}/>
                   <Bar dataKey="income" fill="#22c55e" radius={[4,4,0,0]} background={{fill: "transparent"}}/>
-                <Bar dataKey="expenses" fill="#ef4444" radius={[4,4,0,0]} background={{fill: "transparent"}}/>
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -323,7 +349,10 @@ function App() {
                       <Cell key={index} fill={["#6366f1","#f97316","#22c55e","#eab308","#ec4899","#14b8a6"][index % 6]}/>
                     ))}
                   </Pie>
-                  <Tooltip contentStyle={{backgroundColor: "#1f2937", border: "none"}}/>
+                  <Tooltip 
+                    contentStyle={{backgroundColor: "#1f2937", border: "none"}}
+                    formatter={(value, name) => [`$${value.toFixed(2)}`, name]}
+                  />
                   <Legend
                     layout="vertical" 
                     align="right" 
@@ -354,14 +383,14 @@ function App() {
                   <p className="text-xs text-gray-400">Largest Expense</p>
                   <p className="text-red-400 text-xl font-bold mt-1">-${Math.abs(largestExpense).toFixed(2)}</p>
                   <p className="text-xs text-gray-500 mt-1">
-                    {transactions.find(t => t.amount === largestExpense)?.description ?? ""}
+                    {filteredTransactions.find(t => t.amount === largestExpense)?.description ?? ""} · {new Date(filteredTransactions.find(t => t.amount === largestExpense)?.date).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"})}
                   </p>
                 </div>
                 <div className="bg-gray-800 rounded-lg p-4">
                   <p className="text-xs text-gray-400">Top Category</p>
                   <p className="text-white text-xl font-bold mt-1 capitalize">{topCategory}</p>
                   <p className="text-xs text-gray-500 mt-1">
-                    ${Math.abs(summary[topCategory] ?? 0).toFixed(2)} total
+                    ${categoryChartData.find(c => c.name === topCategory)?.value.toFixed(2) ?? 0} total
                   </p>
                 </div>
                 <div className="bg-gray-800 rounded-lg p-4">
@@ -390,7 +419,7 @@ function App() {
             <div>
               <p className="text-xs uppercase tracking-widest text-gray-400 font-semibold mb-4">Recent Transactions</p>
               <div className="flex flex-col gap-2">
-                {[...transactions]
+                {[...filteredTransactions]
                   .sort((a, b) => new Date(a.date) - new Date(b.date))
                   .reverse()
                   .slice(0, 8)
