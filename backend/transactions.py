@@ -89,3 +89,16 @@ def filter_by_week(transactions, year, week_number):
             date_list.append(item)
 
     return date_list
+
+
+# Notes
+def load_notes(filepath):
+    try:
+        df = pd.read_csv(filepath)
+        return df.to_dict(orient="records")
+    except:
+        return []
+
+def save_notes(notes, filepath):
+    df = pd.DataFrame(notes)
+    df.to_csv(filepath, index=False)

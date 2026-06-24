@@ -8,7 +8,10 @@ transactions = [
     {"date": "2026-05-24", "category": "family", "amount": 400, "description": "parents", "included": True}
 ]
 
-pd.DataFrame(transactions).to_csv("data/sample_transactions.csv", index=False)
+#pd.DataFrame(transactions).to_csv("data/sample_transactions.csv", index=False)
 
 # Empty credit transactions file with correct headers
 pd.DataFrame(columns=["date", "category", "amount", "description", "included"]).to_csv("data/credit_transactions.csv", index=False)
+
+# Notes
+pd.DataFrame(columns=["id","text","date"]).to_csv("data/notes.csv", index=False)

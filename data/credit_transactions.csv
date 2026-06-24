@@ -1,2 +1,5 @@
 date,category,amount,description,included
 2026-06-17,other,-78,groceries,True
+2026-06-24,transport,-500,Delta ticket,False
+2026-06-16,transport,-250,Flight ticket,False
+2026-06-25,subscriptions,-30,Spotfiy,False

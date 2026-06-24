@@ -12,6 +12,16 @@ function App() {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
+  // Semester state
+  const getCurrentSemester = () => {
+  const month = new Date().getMonth() + 1;
+    if (month <= 4) return "Spring";
+    if (month <= 8) return "Summer";
+    if (month <= 11) return "Fall";
+    return "Winter";
+  };
+  const [selectedSemester, setSelectedSemester] = useState(getCurrentSemester());
+
   const filteredTransactions = (() => {
     if (activePeriod === "All Time") return transactions;
     if (activePeriod === "Monthly") return transactions.filter(t => {
@@ -21,14 +31,21 @@ function App() {
     if (activePeriod === "Yearly") return transactions.filter(t => {
       return new Date(t.date).getFullYear() === selectedYear;
     });
-    if (activePeriod === "6 Months") {
-      const sixMonthsAgo = new Date();
-      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-      return transactions.filter(t => new Date(t.date) >= sixMonthsAgo);
+    if (activePeriod === "Semester") {
+      const semesterMonths = {
+        "Spring": [1,2,3,4],
+        "Summer": [5,6,7,8], 
+        "Fall": [9,10,11],
+        "Winter": [12]
+      };
+      return transactions.filter(t => {
+        const date = new Date(t.date);
+        return semesterMonths[selectedSemester]?.includes(date.getMonth() + 1) 
+          && date.getFullYear() === selectedYear;
+      });
     }
     return transactions;
   })();
-
   
   // calculations for banner header
   const totalIncome = filteredTransactions
@@ -51,25 +68,33 @@ function App() {
 
   // group by month
   const groupByMonth = (transactions) => {
+    if (transactions.length === 0) return [];
+    
     const months = {};
     
     transactions.forEach(t => {
       const date = new Date(t.date);
       const key = date.toLocaleString("default", { month: "short" }) + " " + date.getFullYear();
-      
-      if (!months[key]) {
-        months[key] = { month: key, income: 0, expenses: 0 };
-      }
-      
-      if (t.amount >= 0) {
-        months[key].income += t.amount;
-      } else {
-        months[key].expenses += Math.abs(t.amount);
-      }
+      if (!months[key]) months[key] = { month: key, income: 0, expenses: 0 };
+      if (t.amount >= 0) months[key].income += t.amount;
+      else months[key].expenses += Math.abs(t.amount);
     });
+
+    // Fill gaps between first and last transaction
+    const dates = transactions.map(t => new Date(t.date));
+    const minDate = new Date(Math.min(...dates));
+    const maxDate = new Date(Math.max(...dates));
     
+    const current = new Date(minDate.getFullYear(), minDate.getMonth());
+    while (current <= maxDate) {
+      const key = current.toLocaleString("default", { month: "short" }) + " " + current.getFullYear();
+      if (!months[key]) months[key] = { month: key, income: 0, expenses: 0 };
+      current.setMonth(current.getMonth() + 1);
+    }
+
     return Object.values(months);
   };
+
   const monthlyData = groupByMonth(filteredTransactions).sort((a, b) => {
     return new Date("01 " + a.month) - new Date("01 " + b.month);
   });
@@ -122,24 +147,55 @@ function App() {
     .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
 
 
-  //Notes section
-  const [notes, setNotes] = useState([]);
-  const [newNote, setNewNote] = useState("");
-
+  // Form submit
   const handleSubmit = (e) => {
-    e.preventDefault(); // stops page from reloading
+    e.preventDefault();
     fetch("http://127.0.0.1:5000/transactions", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({...formData, amount: parseFloat(formData.amount)})
     }).then(() => {
-      // re-fetch transactions after adding
       fetch("http://127.0.0.1:5000/transactions")
         .then(res => res.json())
-        .then(data => setTransactions(data))
+        .then(data => setTransactions(data));
+      
+      fetch("http://127.0.0.1:5000/credit-transactions")
+        .then(res => res.json())
+        .then(data => setCreditTransactions(data));
+
       setFormData({date: "", category: "", amount: "", description: "", type: "debit", included: true});
-    })
-  }
+    });
+  };
+
+  // Notes section
+  const [notes, setNotes] = useState([]);
+  const [newNote, setNewNote] = useState("");
+  const [editingNoteId, setEditingNoteId] = useState(null);
+  const [editingText, setEditingText] = useState("");
+
+  // Add note
+  const handleAddNote = () => {
+    if (!newNote.trim()) return;
+    const note = {
+      text: newNote,
+      date: new Date().toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"})
+    };
+    fetch("http://127.0.0.1:5000/notes", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(note)
+    }).then(() => {
+      fetch("http://127.0.0.1:5000/notes")
+        .then(res => res.json())
+        .then(data => setNotes(data));
+      setNewNote("");
+    });
+  };
+
+  // Credit transactions
+  const [creditTransactions, setCreditTransactions] = useState([]);
+  const [showAllTransactions, setShowAllTransactions] = useState(false);
+
 
   useEffect(() => {
     fetch("http://127.0.0.1:5000/transactions")
@@ -149,6 +205,14 @@ function App() {
     fetch("http://127.0.0.1:5000/summary")
       .then(res => res.json())
       .then(data => setSummary(data))
+
+    fetch("http://127.0.0.1:5000/notes")
+      .then(res => res.json())
+      .then(data => setNotes(data))
+
+    fetch("http://127.0.0.1:5000/credit-transactions")
+      .then(res => res.json())
+      .then(data => setCreditTransactions(data))
   }, []);
 
 
@@ -157,8 +221,59 @@ function App() {
       {/* Navbar */}
       <nav className="bg-gray-900 border-b border-gray-700 px-6 py-4 flex justify-between items-center">
         <h1 className="text-white font-bold text-xl tracking-tight">◆ Finance Tracker</h1>
+        
+        {/* Monthly Picker */}
+        {activePeriod === "Monthly" && (
+          <div className="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-1">
+            <button onClick={() => {
+              const date = new Date(selectedYear, selectedMonth - 2);
+              setSelectedMonth(date.getMonth() + 1);
+              setSelectedYear(date.getFullYear());
+            }} className="text-gray-400 hover:text-white font-bold px-2">←</button>
+            <span className="text-sm text-white w-28 text-center">
+              {new Date(selectedYear, selectedMonth - 1).toLocaleString("default", {month: "long", year: "numeric"})}
+            </span>
+            <button onClick={() => {
+              const date = new Date(selectedYear, selectedMonth);
+              setSelectedMonth(date.getMonth() + 1);
+              setSelectedYear(date.getFullYear());
+            }} className="text-gray-400 hover:text-white font-bold px-2">→</button>
+          </div>
+        )}
+
+        {/* Semester Picker */}
+        {activePeriod === "Semester" && (
+          <div className="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-1">
+            <button onClick={() => {
+              const semesters = ["Spring", "Summer", "Fall", "Winter"];
+              const idx = semesters.indexOf(selectedSemester);
+              if (idx === 0) { setSelectedSemester("Winter"); setSelectedYear(selectedYear - 1); }
+              else setSelectedSemester(semesters[idx - 1]);
+            }} className="text-gray-400 hover:text-white font-bold px-2">←</button>
+            <span className="text-sm text-white w-28 text-center">{selectedSemester} {selectedYear}</span>
+            <button onClick={() => {
+              const semesters = ["Spring", "Summer", "Fall", "Winter"];
+              const idx = semesters.indexOf(selectedSemester);
+              if (idx === 3) { setSelectedSemester("Spring"); setSelectedYear(selectedYear + 1); }
+              else setSelectedSemester(semesters[idx + 1]);
+            }} className="text-gray-400 hover:text-white font-bold px-2">→</button>
+          </div>
+        )}
+
+        {/* Year Picker */}
+        {activePeriod === "Yearly" && (
+          <div className="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-1">
+            <button onClick={() => setSelectedYear(selectedYear - 1)}
+              className="text-gray-400 hover:text-white font-bold px-2">←</button>
+            <span className="text-sm text-white w-16 text-center">{selectedYear}</span>
+            <button onClick={() => setSelectedYear(selectedYear + 1)}
+              className="text-gray-400 hover:text-white font-bold px-2">→</button>
+          </div>
+        )}
+
+        {/* Top bar */}
         <div className="flex bg-gray-800 rounded-lg p-1 gap-1">
-          {["All Time", "Yearly", "6 Months", "Monthly"].map(period => (
+          {["All Time", "Yearly", "Semester", "Monthly"].map(period => (
             <button
               key={period}
               className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
@@ -272,43 +387,138 @@ function App() {
           </form>
 
           <div className="mt-8">
-            <p className="text-xs uppercase tracking-widest text-gray-400 font-semibold mb-4">
-              Notes
-            </p>
+            <p className="text-xs uppercase tracking-widest text-gray-400 font-semibold mb-4">Notes</p>
+            
+            {/* Input always visible at top */}
             <div className="flex gap-2 mb-4">
-              <input
+              <textarea
                 type="text"
                 value={newNote}
                 onChange={(e) => setNewNote(e.target.value)}
                 placeholder="Log a transaction note"
+                rows = {2}
                 className="bg-gray-800 text-white px-3 py-2 rounded text-sm flex-1"
               />
-              <button
-                onClick={() => {
-                  if (newNote.trim()) {
-                    setNotes([...notes, {text: newNote, date: new Date().toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"})}]);
-                    setNewNote("");
-                  }
-                }}
-                className="bg-yellow-500 text-black font-bold px-3 py-2 rounded text-sm"
-              >
-                +
-              </button>
+              <button onClick={handleAddNote}
+                className="bg-yellow-500 text-black font-bold px-3 py-2 rounded text-sm">+</button>
             </div>
+
+            {/* Notes list */}
             <div className="flex flex-col gap-3">
-              {notes.map((note, index) => (
-                <div key={index} className="bg-gray-800 rounded p-3">
-                  <p className="text-sm text-white">{note.text}</p>
-                  <p className="text-xs text-gray-500 mt-1">{note.date}</p>
+              {[...notes].reverse().map((note) => (
+                <div key={note.id} className="bg-gray-800 rounded p-3">
+                  {editingNoteId === note.id ? (
+                    <div className="flex flex-col gap-2">
+                      <textarea
+                        value={editingText}
+                        onChange={(e) => setEditingText(e.target.value)}
+                        rows={2}
+                        className="bg-gray-700 text-white px-2 py-1 rounded text-sm w-full"
+                      />
+                      <div className="flex gap-2">
+                        <button onClick={() => {
+                          fetch(`http://127.0.0.1:5000/notes/${note.id}`, {
+                            method: "PUT",
+                            headers: {"Content-Type": "application/json"},
+                            body: JSON.stringify({text: editingText})
+                          }).then(() => {
+                            fetch("http://127.0.0.1:5000/notes")
+                              .then(res => res.json())
+                              .then(data => setNotes(data));
+                            setEditingNoteId(null);
+                          });
+                        }} className="text-xs bg-green-600 text-white px-2 py-1 rounded">Save</button>
+                        <button onClick={() => setEditingNoteId(null)}
+                          className="text-xs bg-gray-600 text-white px-2 py-1 rounded">Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-sm text-white whitespace-pre-wrap">{note.text}</p>
+                      <p className="text-xs text-gray-500 mt-1">{note.date}</p>
+                      <div className="flex gap-2 mt-2">
+                        <button onClick={() => { setEditingNoteId(note.id); setEditingText(note.text); }}
+                          className="text-xs text-gray-400 hover:text-white">Edit</button>
+                        <button onClick={() => {
+                          fetch(`http://127.0.0.1:5000/notes/${note.id}`, {method: "DELETE"})
+                            .then(() => {
+                              fetch("http://127.0.0.1:5000/notes")
+                                .then(res => res.json())
+                                .then(data => setNotes(data));
+                            });
+                        }} className="text-xs text-red-400 hover:text-red-300">Delete</button>
+                      </div>
+                    </>
+                  )}
                 </div>
               ))}
+
+              {/* Auto-notes for credit transactions */}
+                {creditTransactions.filter(t => t.included === false || t.included === "False").length > 0 && (
+                  <div className="bg-gray-800 rounded p-3 mt-3 border border-gray-700">
+                    <p className="text-xs text-yellow-400 font-semibold mb-2">Credit — Not Included</p>
+                    {creditTransactions
+                      .filter(t => t.included === false || t.included === "False")
+                      .sort((a, b) => new Date(b.date) - new Date(a.date))
+                      .map((t, i) => (
+                        <p key={i} className="text-xs text-gray-400 py-1 border-b border-gray-700 last:border-0">
+                          {t.description} · ${Math.abs(t.amount)} · {new Date(t.date).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"})} · {t.category}
+                        </p>
+                      ))}
+                  </div>
+                )}
+
+                {creditTransactions.filter(t => t.included === true || t.included === "True").length > 0 && (
+                  <div className="bg-gray-800 rounded p-3 mt-3 border border-gray-700">
+                    <p className="text-xs text-blue-400 font-semibold mb-2">Credit — Included</p>
+                    {creditTransactions
+                      .filter(t => t.included === true || t.included === "True")
+                      .sort((a, b) => new Date(b.date) - new Date(a.date))
+                      .map((t, i) => (
+                        <p key={i} className="text-xs text-gray-400 py-1 border-b border-gray-700 last:border-0">
+                          {t.description} · ${Math.abs(t.amount)} · {new Date(t.date).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"})} · {t.category}
+                        </p>
+                      ))}
+                  </div>
+                )}
             </div>
           </div>
-        </div>
-
+        </div>  
 
         {/* Right Main Area */}
-        <div className="flex-1 p-6">
+        <div className="flex-1 p-6 relative">
+
+          {/* All Transactions Overlay */}
+          {showAllTransactions && (
+            <div className="absolute inset-0 bg-gray-900 z-10 p-6 overflow-y-auto">
+              <div className="flex justify-between items-center mb-6">
+                <p className="text-xs uppercase tracking-widest text-gray-400 font-semibold">All Transactions</p>
+                <button onClick={() => setShowAllTransactions(false)}
+                  className="text-gray-400 hover:text-white text-sm">✕ Close</button>
+              </div>
+              <div className="flex flex-col gap-2">
+                {[...filteredTransactions]
+                  .sort((a, b) => new Date(b.date) - new Date(a.date))
+                  .map((t, index) => (
+                    <div key={index} className="flex justify-between items-center border-b border-gray-800 pb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-2 h-2 rounded-full"
+                          style={{backgroundColor: categoryColors[t.category] || "#9ca3af"}}/>
+                        <div>
+                          <p className="text-sm font-medium">{t.description}</p>
+                          <p className="text-xs text-gray-400">{t.category} · {new Date(t.date).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"})}</p>
+                        </div>
+                      </div>
+                      <p className={`text-sm font-bold ${t.amount < 0 ? "text-red-400" : "text-green-400"}`}>
+                        {t.amount < 0 ? `-$${Math.abs(t.amount)}` : `+$${t.amount}`}
+                      </p>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {/* Dashboard Content */}
           <div className="grid grid-cols-2 gap-6 mt-2">
 
             {/* Bar chart on left */}
@@ -346,7 +556,7 @@ function App() {
                 <PieChart>
                   <Pie data={categoryChartData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} dataKey="value">
                     {categoryChartData.map((entry, index) => (
-                      <Cell key={index} fill={["#6366f1","#f97316","#22c55e","#eab308","#ec4899","#14b8a6"][index % 6]}/>
+                      <Cell key={index} fill={categoryColors[entry.name] || "#9ca3af"}/>
                     ))}
                   </Pie>
                   <Tooltip 
@@ -417,7 +627,11 @@ function App() {
 
             {/* Recent Transactions */}
             <div>
-              <p className="text-xs uppercase tracking-widest text-gray-400 font-semibold mb-4">Recent Transactions</p>
+              <div className="flex justify-between items-center mb-4">
+                <p className="text-xs uppercase tracking-widest text-gray-400 font-semibold">Recent Transactions</p>
+                <button onClick={() => setShowAllTransactions(true)}
+                  className="text-xs text-blue-400 hover:text-blue-300">View All →</button>
+              </div>
               <div className="flex flex-col gap-2">
                 {[...filteredTransactions]
                   .sort((a, b) => new Date(a.date) - new Date(b.date))
@@ -430,7 +644,12 @@ function App() {
                           style={{backgroundColor: categoryColors[t.category] || "#9ca3af"}}>
                         </div>
                         <div>
-                          <p className="text-sm font-medium">{t.description}</p>
+                          <p className="text-sm font-medium">
+                            {t.description}
+                            {t.source === "credit" && (
+                              <span className="ml-2 text-xs bg-blue-900 text-blue-300 px-1.5 py-0.5 rounded">credit</span>
+                            )}
+                          </p>
                           <p className="text-xs text-gray-400">{t.category} · {new Date(t.date).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"})}</p>
                         </div>
                       </div>
