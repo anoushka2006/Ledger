@@ -1,13 +1,16 @@
 import { useState, useEffect } from "react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, LineChart, Line, CartesianGrid } from "recharts";
 
 function App() {
   const [transactions, setTransactions] = useState([]);
-  const [summary, setSummary] = useState({});
+
+  // Credit transactions
+  const [creditTransactions, setCreditTransactions] = useState([]);
+  const [showAllTransactions, setShowAllTransactions] = useState(false);
 
   const [activePeriod, setActivePeriod] = useState("All Time");
 
-  //Toggle wiring
+  // Toggle wiring
   //const [activePeriod, setActivePeriod] = useState("All Time"); // already have this
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -21,37 +24,47 @@ function App() {
     return "Winter";
   };
   const [selectedSemester, setSelectedSemester] = useState(getCurrentSemester());
+  
+  // Chart toggle
+  const [chartType, setChartType] = useState("line");
+
+  // Filtered transactions for toggle including credit transactions
+  const allTransactions = [...transactions, ...creditTransactions];
 
   const filteredTransactions = (() => {
-    if (activePeriod === "All Time") return transactions;
-    if (activePeriod === "Monthly") return transactions.filter(t => {
+    if (activePeriod === "All Time") return allTransactions;
+    if (activePeriod === "Monthly") return allTransactions.filter(t => {
       const date = new Date(t.date);
       return date.getMonth() + 1 === selectedMonth && date.getFullYear() === selectedYear;
     });
-    if (activePeriod === "Yearly") return transactions.filter(t => {
+    if (activePeriod === "Yearly") return allTransactions.filter(t => {
       return new Date(t.date).getFullYear() === selectedYear;
     });
     if (activePeriod === "Semester") {
       const semesterMonths = {
         "Spring": [1,2,3,4],
-        "Summer": [5,6,7,8], 
+        "Summer": [5,6,7,8],
         "Fall": [9,10,11],
         "Winter": [12]
       };
-      return transactions.filter(t => {
+      return allTransactions.filter(t => {
         const date = new Date(t.date);
-        return semesterMonths[selectedSemester]?.includes(date.getMonth() + 1) 
+        return semesterMonths[selectedSemester]?.includes(date.getMonth() + 1)
           && date.getFullYear() === selectedYear;
       });
     }
-    return transactions;
+    return allTransactions;
   })();
+
+  const calculationTransactions = filteredTransactions.filter(t =>
+    t.source === "debit" || t.included === true || t.included === "True"
+  );
   
   // calculations for banner header
-  const totalIncome = filteredTransactions
+  const totalIncome = calculationTransactions
     .filter(t => t.amount >= 0)
     .reduce((total, t) => total + t.amount, 0);
-  const totalExpenses = filteredTransactions
+  const totalExpenses = calculationTransactions
     .filter(t => t.amount < 0)
     .reduce((total, t) => total + t.amount, 0) * -1;
   const netBalance = totalIncome - totalExpenses;
@@ -80,7 +93,7 @@ function App() {
       else months[key].expenses += Math.abs(t.amount);
     });
 
-    // Fill gaps between first and last transaction
+  // Fill gaps between first and last transaction
     const dates = transactions.map(t => new Date(t.date));
     const minDate = new Date(Math.min(...dates));
     const maxDate = new Date(Math.max(...dates));
@@ -95,14 +108,56 @@ function App() {
     return Object.values(months);
   };
 
-  const monthlyData = groupByMonth(filteredTransactions).sort((a, b) => {
+  const monthlyData = groupByMonth(calculationTransactions).sort((a, b) => {
     return new Date("01 " + a.month) - new Date("01 " + b.month);
   });
 
 
+  // group by week
+  const groupByWeek = (transactions) => {
+    if (transactions.length === 0) return [];
+    
+    const weeks = {};
+    
+    transactions.forEach(t => {
+      const date = new Date(t.date);
+      const dayOfWeek = date.getDay();
+      const weekStart = new Date(date);
+      weekStart.setDate(date.getDate() - dayOfWeek);
+      const key = weekStart.toLocaleDateString("en-US", {month: "short", day: "numeric"});
+      
+      if (!weeks[key]) weeks[key] = { week: key, income: 0, expenses: 0, sort: weekStart.getTime() };
+      if (t.amount >= 0) weeks[key].income += t.amount;
+      else weeks[key].expenses += Math.abs(t.amount);
+    });
+
+    if (transactions.length > 0) {
+      const dates = transactions.map(t => new Date(t.date));
+      const minDate = new Date(Math.min(...dates));
+      const maxDate = new Date(Math.max(...dates));
+      const current = new Date(minDate);
+      current.setDate(current.getDate() - current.getDay());
+      while (current <= maxDate) {
+        const key = current.toLocaleDateString("en-US", {month: "short", day: "numeric"});
+        if (!weeks[key]) weeks[key] = { week: key, income: 0, expenses: 0, sort: current.getTime() };
+        current.setDate(current.getDate() + 7);
+      }
+    }
+
+    return Object.values(weeks).sort((a, b) => a.sort - b.sort);
+  };
+
+  // bar and line chart data selection
+  const chartData = (() => {
+    if (activePeriod === "Monthly") return groupByWeek(calculationTransactions);
+    if (activePeriod === "Semester" && chartType === "line") return groupByWeek(calculationTransactions);
+    return monthlyData;
+  })();
+
+
   // category expenses
   const categoryChartData = Object.entries(
-    filteredTransactions
+    calculationTransactions
       .filter(t => t.amount < 0)
       .reduce((acc, t) => {
         acc[t.category] = (acc[t.category] || 0) + Math.abs(t.amount);
@@ -121,31 +176,94 @@ function App() {
     other: "#9ca3af"
   };
 
+  // Custom tooltip for the category breakdown
+  const CustomTooltip = ({ active, payload }) => {
+    if (active && payload && payload.length) {
+      const value = payload[0].value;
+      const name = payload[0].name;
+      const color = payload[0].payload.fill || categoryColors[name] || "#9ca3af";
+      const total = categoryChartData.reduce((sum, c) => sum + c.value, 0);
+      const pct = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+      return (
+        <div className="bg-gray-800 px-4 py-3 rounded-lg text-sm border border-gray-700">
+          <p className="capitalize font-semibold mb-1" style={{color}}>{name}</p>
+          <p className="text-white font-bold text-base">${value.toFixed(2)}</p>
+          <p className="text-gray-400 mt-0.5">{pct}%</p>
+        </div>
+      );
+    }
+    return null;
+  };
+
 
   // At A Glance Data
   const avgMonthlySpend = monthlyData.length > 0 
     ? totalExpenses / monthlyData.length 
     : 0;
 
-  const transactionCount = filteredTransactions.length;
+  const transactionCount = calculationTransactions.length;
 
-  const largestExpense = filteredTransactions
+
+  // Shows the most recent if a tie
+  const largestExpenseTransaction = calculationTransactions
     .filter(t => t.amount < 0)
-    .reduce((min, t) => t.amount < min ? t.amount : min, 0);
+    .sort((a, b) => a.amount - b.amount || new Date(b.date) - new Date(a.date))[0];
+
+  const largestExpense = largestExpenseTransaction?.amount ?? 0;
 
   const topCategory = categoryChartData.sort((a,b) => b.value - a.value)[0]?.name ?? "N/A";
 
-  const lastMonthSpend = monthlyData.length >= 2 
-    ? monthlyData[monthlyData.length - 2].expenses 
-    : 0;
+  // Spending vs Last month
+  const getPreviousMonthSpend = () => {
+    const prevMonth = selectedMonth === 1 ? 12 : selectedMonth - 1;
+    const prevYear = selectedMonth === 1 ? selectedYear - 1 : selectedYear;
+    return transactions
+      .filter(t => {
+        const date = new Date(t.date);
+        return date.getMonth() + 1 === prevMonth && date.getFullYear() === prevYear && t.amount < 0;
+      })
+      .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+  };
+
+  const lastMonthSpend = (() => {
+    if (activePeriod === "Monthly") return getPreviousMonthSpend();
+    if (activePeriod === "Yearly") {
+      return transactions
+        .filter(t => new Date(t.date).getFullYear() === selectedYear - 1 && t.amount < 0)
+        .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+    }
+    if (activePeriod === "Semester") {
+      const semesterMonths = {
+        "Spring": [1,2,3,4], "Summer": [5,6,7,8],
+        "Fall": [9,10,11], "Winter": [12]
+      };
+      const prevSemesters = ["Spring", "Summer", "Fall", "Winter"];
+      const idx = prevSemesters.indexOf(selectedSemester);
+      const prevSemester = idx === 0 ? "Winter" : prevSemesters[idx - 1];
+      const prevYear = idx === 0 ? selectedYear - 1 : selectedYear;
+      return transactions
+        .filter(t => {
+          const date = new Date(t.date);
+          return semesterMonths[prevSemester]?.includes(date.getMonth() + 1)
+            && date.getFullYear() === prevYear && t.amount < 0;
+        })
+        .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+    }
+    return monthlyData.length >= 2 ? monthlyData[monthlyData.length - 2].expenses : 0;
+  })();
+  
   const spendingChange = lastMonthSpend > 0 
     ? ((monthlyData[monthlyData.length - 1]?.expenses - lastMonthSpend) / lastMonthSpend * 100).toFixed(1)
     : "N/A";
+
 
   const lastParentTransaction = [...transactions]
     .filter(t => t.category === "family" && t.amount > 0)
     .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
 
+
+  //Categpry filter on All Transactions Overlay
+  const [categoryFilter, setCategoryFilter] = useState("all");
 
   // Form submit
   const handleSubmit = (e) => {
@@ -192,19 +310,11 @@ function App() {
     });
   };
 
-  // Credit transactions
-  const [creditTransactions, setCreditTransactions] = useState([]);
-  const [showAllTransactions, setShowAllTransactions] = useState(false);
-
 
   useEffect(() => {
     fetch("http://127.0.0.1:5000/transactions")
       .then(res => res.json())
       .then(data => setTransactions(data))
-
-    fetch("http://127.0.0.1:5000/summary")
-      .then(res => res.json())
-      .then(data => setSummary(data))
 
     fetch("http://127.0.0.1:5000/notes")
       .then(res => res.json())
@@ -214,7 +324,6 @@ function App() {
       .then(res => res.json())
       .then(data => setCreditTransactions(data))
   }, []);
-
 
   return (
     <div className="bg-gray-900 min-h-screen text-white">
@@ -496,8 +605,18 @@ function App() {
                 <button onClick={() => setShowAllTransactions(false)}
                   className="text-gray-400 hover:text-white text-sm">✕ Close</button>
               </div>
+              <div className="flex gap-2 flex-wrap mb-4">
+                {["all", "food", "shopping", "transport", "entertainment", "work", "subscriptions", "family", "other"].map(cat => (
+                  <button key={cat}
+                    onClick={() => setCategoryFilter(cat)}
+                    className={`px-3 py-1 rounded-full text-xs capitalize ${categoryFilter === cat ? "bg-blue-500 text-white" : "bg-gray-800 text-gray-400 hover:text-white"}`}>
+                    {cat}
+                  </button>
+                ))}
+              </div>
               <div className="flex flex-col gap-2">
                 {[...filteredTransactions]
+                  .filter(t => categoryFilter === "all" || t.category === categoryFilter)
                   .sort((a, b) => new Date(b.date) - new Date(a.date))
                   .map((t, index) => (
                     <div key={index} className="flex justify-between items-center border-b border-gray-800 pb-3">
@@ -505,7 +624,12 @@ function App() {
                         <div className="w-2 h-2 rounded-full"
                           style={{backgroundColor: categoryColors[t.category] || "#9ca3af"}}/>
                         <div>
-                          <p className="text-sm font-medium">{t.description}</p>
+                          <p className="text-sm font-medium">
+                            {t.description}
+                            {t.source === "credit" && (
+                              <span className="ml-2 text-xs bg-blue-900 text-blue-300 px-1.5 py-0.5 rounded">credit</span>
+                            )}
+                          </p>
                           <p className="text-xs text-gray-400">{t.category} · {new Date(t.date).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"})}</p>
                         </div>
                       </div>
@@ -523,29 +647,38 @@ function App() {
 
             {/* Bar chart on left */}
             <div className="flex flex-col gap-4">
-              <p className="text-xs uppercase tracking-widest text-gray-400 font-semibold">Income vs Expenses Trend</p>
+              <div className="flex justify-between items-center">
+                <p className="text-xs uppercase tracking-widest text-gray-400 font-semibold">Income vs Expenses Trend</p>
+                <div className="flex bg-gray-800 rounded-lg p-0.5 gap-0.5">
+                  <button onClick={() => setChartType("bar")}
+                    className={`px-3 py-1 rounded text-xs font-medium ${chartType === "bar" ? "bg-gray-600 text-white" : "text-gray-400 hover:text-white"}`}>
+                    Bar
+                  </button>
+                  <button onClick={() => setChartType("line")}
+                    className={`px-3 py-1 rounded text-xs font-medium ${chartType === "line" ? "bg-gray-600 text-white" : "text-gray-400 hover:text-white"}`}>
+                    Line
+                  </button>
+                </div>
+              </div>
               <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={monthlyData}>
-                  <XAxis 
-                    dataKey="month"
-                    stroke="#6b7280"
-                    tick={{fill: "#6b7280", fontSize: 11}}
-                    interval={0}
-                    angle={-30}
-                    textAnchor="end"
-                    height={60}
-                  />
-                  <YAxis stroke="#6b7280" tick={{fill: "#6b7280", fontSize: 12}}/>
-                  <Tooltip
-                    contentStyle={{backgroundColor: "#111827", border: "1px solid #374151", borderRadius: "8px"}}
-                    labelStyle={{color: "#f9fafb"}}
-                    itemStyle={{color: "#9ca3af"}}
-                    formatter={(value, name) => [`$${value.toFixed(2)}`, name.charAt(0).toUpperCase() + name.slice(1)]}
-                    labelFormatter={(label) => label}
-                  />
-                  <Bar dataKey="expenses" fill="#ef4444" radius={[4,4,0,0]} background={{fill: "transparent"}}/>
-                  <Bar dataKey="income" fill="#22c55e" radius={[4,4,0,0]} background={{fill: "transparent"}}/>
-                </BarChart>
+                {chartType === "bar" ? (
+                  <BarChart data={chartData}>
+                    <XAxis dataKey={activePeriod === "Monthly" || (activePeriod === "Semester" && chartType === "line") ? "week" : "month"} stroke="#6b7280" tick={{fill: "#6b7280", fontSize: 11}} interval="preserveStartEnd" angle={-30} textAnchor="end" height={60}/>
+                    <YAxis stroke="#6b7280" tick={{fill: "#6b7280", fontSize: 12}}/>
+                    <Tooltip contentStyle={{backgroundColor: "#111827", border: "1px solid #374151", borderRadius: "8px"}} labelStyle={{color: "#f9fafb"}} itemStyle={{color: "#9ca3af"}} formatter={(value, name) => [`$${value.toFixed(2)}`, name.charAt(0).toUpperCase() + name.slice(1)]}/>
+                    <Bar dataKey="expenses" fill="#ef4444" radius={[4,4,0,0]} background={{fill: "transparent"}}/>
+                    <Bar dataKey="income" fill="#22c55e" radius={[4,4,0,0]} background={{fill: "transparent"}}/>
+                  </BarChart>
+                ) : (
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1f2937"/>
+                    <XAxis dataKey={activePeriod === "Monthly" || (activePeriod === "Semester" && chartType === "line") ? "week" : "month"} stroke="#6b7280" tick={{fill: "#6b7280", fontSize: 11}} interval="preserveStartEnd" angle={-30} textAnchor="end" height={60}/>
+                    <YAxis stroke="#6b7280" tick={{fill: "#6b7280", fontSize: 12}}/>
+                    <Tooltip contentStyle={{backgroundColor: "#111827", border: "1px solid #374151", borderRadius: "8px"}} labelStyle={{color: "#f9fafb"}} itemStyle={{color: "#9ca3af"}} formatter={(value, name) => [`$${value.toFixed(2)}`, name.charAt(0).toUpperCase() + name.slice(1)]}/>
+                    <Line type="monotone" dataKey="expenses" stroke="#ef4444" strokeWidth={2} dot={false}/>
+                    <Line type="monotone" dataKey="income" stroke="#22c55e" strokeWidth={2} dot={false}/>
+                  </LineChart>
+                )}
               </ResponsiveContainer>
             </div>
   
@@ -559,10 +692,7 @@ function App() {
                       <Cell key={index} fill={categoryColors[entry.name] || "#9ca3af"}/>
                     ))}
                   </Pie>
-                  <Tooltip 
-                    contentStyle={{backgroundColor: "#1f2937", border: "none"}}
-                    formatter={(value, name) => [`$${value.toFixed(2)}`, name]}
-                  />
+                  <Tooltip content={<CustomTooltip />} />
                   <Legend
                     layout="vertical" 
                     align="right" 
@@ -593,7 +723,7 @@ function App() {
                   <p className="text-xs text-gray-400">Largest Expense</p>
                   <p className="text-red-400 text-xl font-bold mt-1">-${Math.abs(largestExpense).toFixed(2)}</p>
                   <p className="text-xs text-gray-500 mt-1">
-                    {filteredTransactions.find(t => t.amount === largestExpense)?.description ?? ""} · {new Date(filteredTransactions.find(t => t.amount === largestExpense)?.date).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"})}
+                    {largestExpenseTransaction?.description ?? ""} · {largestExpenseTransaction?.date ? new Date(largestExpenseTransaction.date).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"}) : ""}
                   </p>
                 </div>
                 <div className="bg-gray-800 rounded-lg p-4">
@@ -604,7 +734,11 @@ function App() {
                   </p>
                 </div>
                 <div className="bg-gray-800 rounded-lg p-4">
-                  <p className="text-xs text-gray-400">Spending vs Last Month</p>
+                  <p className="text-xs text-gray-400">
+                    {activePeriod === "Yearly" ? "Spending vs Last Year" : 
+                    activePeriod === "Semester" ? "Spending vs Last Semester" : 
+                    "Spending vs Last Month"}
+                  </p>
                   <p className={`text-xl font-bold mt-1 ${spendingChange > 0 ? "text-red-400" : "text-green-400"}`}>
                     {spendingChange === "N/A" ? "N/A" : `${spendingChange}%`}
                   </p>
@@ -654,7 +788,7 @@ function App() {
                         </div>
                       </div>
                       <p className={`text-sm font-bold ${t.amount < 0 ? "text-red-400" : "text-green-400"}`}>
-                        {t.amount < 0 ? `-$${Math.abs(t.amount)}` : `+$${t.amount}`}
+                        {t.amount < 0 ? `-$${Math.abs(t.amount).toFixed(2)}` : `+$${parseFloat(t.amount).toFixed(2)}`}
                       </p>
                     </div>
                   ))}
