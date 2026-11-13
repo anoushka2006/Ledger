@@ -1,6 +1,12 @@
 import { useState, useEffect } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, LineChart, Line, CartesianGrid } from "recharts";
 
+// Parse "YYYY-MM-DD" as local midnight (new Date(str) treats it as UTC and shifts a day in US time zones)
+const parseLocalDate = (dateStr) => {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  return new Date(year, month - 1, day);
+};
+
 function App() {
   const [transactions, setTransactions] = useState([]);
 
@@ -34,11 +40,11 @@ function App() {
   const filteredTransactions = (() => {
     if (activePeriod === "All Time") return allTransactions;
     if (activePeriod === "Monthly") return allTransactions.filter(t => {
-      const date = new Date(t.date);
+      const date = parseLocalDate(t.date);
       return date.getMonth() + 1 === selectedMonth && date.getFullYear() === selectedYear;
     });
     if (activePeriod === "Yearly") return allTransactions.filter(t => {
-      return new Date(t.date).getFullYear() === selectedYear;
+      return parseLocalDate(t.date).getFullYear() === selectedYear;
     });
     if (activePeriod === "Semester") {
       const semesterMonths = {
@@ -48,7 +54,7 @@ function App() {
         "Winter": [12]
       };
       return allTransactions.filter(t => {
-        const date = new Date(t.date);
+        const date = parseLocalDate(t.date);
         return semesterMonths[selectedSemester]?.includes(date.getMonth() + 1)
           && date.getFullYear() === selectedYear;
       });
@@ -86,7 +92,7 @@ function App() {
     const months = {};
     
     transactions.forEach(t => {
-      const date = new Date(t.date);
+      const date = parseLocalDate(t.date);
       const key = date.toLocaleString("default", { month: "short" }) + " " + date.getFullYear();
       if (!months[key]) months[key] = { month: key, income: 0, expenses: 0 };
       if (t.amount >= 0) months[key].income += t.amount;
@@ -94,7 +100,7 @@ function App() {
     });
 
   // Fill gaps between first and last transaction
-    const dates = transactions.map(t => new Date(t.date));
+    const dates = transactions.map(t => parseLocalDate(t.date));
     const minDate = new Date(Math.min(...dates));
     const maxDate = new Date(Math.max(...dates));
     
@@ -120,7 +126,7 @@ function App() {
     const weeks = {};
     
     transactions.forEach(t => {
-      const date = new Date(t.date);
+      const date = parseLocalDate(t.date);
       const dayOfWeek = date.getDay();
       const weekStart = new Date(date);
       weekStart.setDate(date.getDate() - dayOfWeek);
@@ -132,7 +138,7 @@ function App() {
     });
 
     if (transactions.length > 0) {
-      const dates = transactions.map(t => new Date(t.date));
+      const dates = transactions.map(t => parseLocalDate(t.date));
       const minDate = new Date(Math.min(...dates));
       const maxDate = new Date(Math.max(...dates));
       const current = new Date(minDate);
@@ -207,7 +213,7 @@ function App() {
   // Shows the most recent if a tie
   const largestExpenseTransaction = calculationTransactions
     .filter(t => t.amount < 0)
-    .sort((a, b) => a.amount - b.amount || new Date(b.date) - new Date(a.date))[0];
+    .sort((a, b) => a.amount - b.amount || parseLocalDate(b.date) - parseLocalDate(a.date))[0];
 
   const largestExpense = largestExpenseTransaction?.amount ?? 0;
 
@@ -219,7 +225,7 @@ function App() {
     const prevYear = selectedMonth === 1 ? selectedYear - 1 : selectedYear;
     return transactions
       .filter(t => {
-        const date = new Date(t.date);
+        const date = parseLocalDate(t.date);
         return date.getMonth() + 1 === prevMonth && date.getFullYear() === prevYear && t.amount < 0;
       })
       .reduce((sum, t) => sum + Math.abs(t.amount), 0);
@@ -229,7 +235,7 @@ function App() {
     if (activePeriod === "Monthly") return getPreviousMonthSpend();
     if (activePeriod === "Yearly") {
       return transactions
-        .filter(t => new Date(t.date).getFullYear() === selectedYear - 1 && t.amount < 0)
+        .filter(t => parseLocalDate(t.date).getFullYear() === selectedYear - 1 && t.amount < 0)
         .reduce((sum, t) => sum + Math.abs(t.amount), 0);
     }
     if (activePeriod === "Semester") {
@@ -243,7 +249,7 @@ function App() {
       const prevYear = idx === 0 ? selectedYear - 1 : selectedYear;
       return transactions
         .filter(t => {
-          const date = new Date(t.date);
+          const date = parseLocalDate(t.date);
           return semesterMonths[prevSemester]?.includes(date.getMonth() + 1)
             && date.getFullYear() === prevYear && t.amount < 0;
         })
@@ -259,7 +265,7 @@ function App() {
 
   const lastParentTransaction = [...transactions]
     .filter(t => t.category === "family" && t.amount > 0)
-    .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+    .sort((a, b) => parseLocalDate(b.date) - parseLocalDate(a.date))[0];
 
 
   //Categpry filter on All Transactions Overlay
@@ -329,7 +335,7 @@ function App() {
     <div className="bg-gray-900 min-h-screen text-white">
       {/* Navbar */}
       <nav className="bg-gray-900 border-b border-gray-700 px-6 py-4 flex justify-between items-center">
-        <h1 className="text-white font-bold text-xl tracking-tight">◆ Finance Tracker</h1>
+        <h1 className="text-white font-bold text-xl tracking-tight">◆ Ledger</h1>
         
         {/* Monthly Picker */}
         {activePeriod === "Monthly" && (
@@ -414,7 +420,7 @@ function App() {
         </div>
         <div className="p-6">
           <p className="text-gray-400 text-xs uppercase tracking-widest">↗ Net Balance</p>
-          <p className="text-green-400 text-4xl font-bold mt-2">
+          <p className={`${netBalance < 0 ? "text-red-400" : "text-green-400"} text-4xl font-bold mt-2`}>
             {netBalance < 0 ? `-$${Math.abs(netBalance).toFixed(2)}` : `$${netBalance.toFixed(2)}`}
           </p>
         </div>
@@ -568,10 +574,10 @@ function App() {
                     <p className="text-xs text-yellow-400 font-semibold mb-2">Credit — Not Included</p>
                     {creditTransactions
                       .filter(t => t.included === false || t.included === "False")
-                      .sort((a, b) => new Date(b.date) - new Date(a.date))
+                      .sort((a, b) => parseLocalDate(b.date) - parseLocalDate(a.date))
                       .map((t, i) => (
                         <p key={i} className="text-xs text-gray-400 py-1 border-b border-gray-700 last:border-0">
-                          {t.description} · ${Math.abs(t.amount)} · {new Date(t.date).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"})} · {t.category}
+                          {t.description} · ${Math.abs(t.amount)} · {parseLocalDate(t.date).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"})} · {t.category}
                         </p>
                       ))}
                   </div>
@@ -582,10 +588,10 @@ function App() {
                     <p className="text-xs text-blue-400 font-semibold mb-2">Credit — Included</p>
                     {creditTransactions
                       .filter(t => t.included === true || t.included === "True")
-                      .sort((a, b) => new Date(b.date) - new Date(a.date))
+                      .sort((a, b) => parseLocalDate(b.date) - parseLocalDate(a.date))
                       .map((t, i) => (
                         <p key={i} className="text-xs text-gray-400 py-1 border-b border-gray-700 last:border-0">
-                          {t.description} · ${Math.abs(t.amount)} · {new Date(t.date).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"})} · {t.category}
+                          {t.description} · ${Math.abs(t.amount)} · {parseLocalDate(t.date).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"})} · {t.category}
                         </p>
                       ))}
                   </div>
@@ -617,7 +623,7 @@ function App() {
               <div className="flex flex-col gap-2">
                 {[...filteredTransactions]
                   .filter(t => categoryFilter === "all" || t.category === categoryFilter)
-                  .sort((a, b) => new Date(b.date) - new Date(a.date))
+                  .sort((a, b) => parseLocalDate(b.date) - parseLocalDate(a.date))
                   .map((t, index) => (
                     <div key={index} className="flex justify-between items-center border-b border-gray-800 pb-3">
                       <div className="flex items-center gap-3">
@@ -630,7 +636,7 @@ function App() {
                               <span className="ml-2 text-xs bg-blue-900 text-blue-300 px-1.5 py-0.5 rounded">credit</span>
                             )}
                           </p>
-                          <p className="text-xs text-gray-400">{t.category} · {new Date(t.date).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"})}</p>
+                          <p className="text-xs text-gray-400">{t.category} · {parseLocalDate(t.date).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"})}</p>
                         </div>
                       </div>
                       <p className={`text-sm font-bold ${t.amount < 0 ? "text-red-400" : "text-green-400"}`}>
@@ -723,7 +729,7 @@ function App() {
                   <p className="text-xs text-gray-400">Largest Expense</p>
                   <p className="text-red-400 text-xl font-bold mt-1">-${Math.abs(largestExpense).toFixed(2)}</p>
                   <p className="text-xs text-gray-500 mt-1">
-                    {largestExpenseTransaction?.description ?? ""} · {largestExpenseTransaction?.date ? new Date(largestExpenseTransaction.date).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"}) : ""}
+                    {largestExpenseTransaction?.description ?? ""} · {largestExpenseTransaction?.date ? parseLocalDate(largestExpenseTransaction.date).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"}) : ""}
                   </p>
                 </div>
                 <div className="bg-gray-800 rounded-lg p-4">
@@ -748,7 +754,7 @@ function App() {
                   {lastParentTransaction ? (
                     <>
                       <p className="text-white text-xl font-bold mt-1">
-                        {new Date(lastParentTransaction.date).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"})}
+                        {parseLocalDate(lastParentTransaction.date).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"})}
                       </p>
                      <p className="text-xs text-gray-500 mt-1">+${lastParentTransaction.amount.toFixed(2)}</p>
                     </>
@@ -768,7 +774,7 @@ function App() {
               </div>
               <div className="flex flex-col gap-2">
                 {[...filteredTransactions]
-                  .sort((a, b) => new Date(a.date) - new Date(b.date))
+                  .sort((a, b) => parseLocalDate(a.date) - parseLocalDate(b.date))
                   .reverse()
                   .slice(0, 8)
                   .map((t, index) => (
@@ -784,7 +790,7 @@ function App() {
                               <span className="ml-2 text-xs bg-blue-900 text-blue-300 px-1.5 py-0.5 rounded">credit</span>
                             )}
                           </p>
-                          <p className="text-xs text-gray-400">{t.category} · {new Date(t.date).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"})}</p>
+                          <p className="text-xs text-gray-400">{t.category} · {parseLocalDate(t.date).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"})}</p>
                         </div>
                       </div>
                       <p className={`text-sm font-bold ${t.amount < 0 ? "text-red-400" : "text-green-400"}`}>
